@@ -1,0 +1,57 @@
+name: desktop_sharing
+description: "Cross-platform remote desktop screen-sharing system with WebRTC."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.4.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  permission_handler: ^11.3.1
+
+    # WebRTC — peer-to-peer video streaming
+  flutter_webrtc: ^1.3.1
+
+
+  # Networking — WebSocket signaling
+  web_socket_channel: ^3.0.1
+
+  # Secure local storage — JWT tokens, device credentials
+  flutter_secure_storage: ^9.2.2
+
+  # System tray icon (Windows, Linux, macOS)
+  # Note: system_tray ^2.0.3 requires uuid ^3.x — use tray_manager instead
+  tray_manager: ^0.2.3
+
+  # Dart FFI — bind to native C/C++/Swift screen capture libraries
+  ffi: ^2.1.3
+
+  # State management
+  provider: ^6.1.2
+
+  # UUID generation for device IDs
+  uuid: ^4.4.2
+
+  # JSON serialization
+  json_annotation: ^4.9.0
+
+  # Shared preferences — lightweight settings
+  shared_preferences: ^2.3.3
+
+  # Logging
+  logger: ^2.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.11
+  json_serializable: ^6.8.0
+  mockito: ^5.4.4
+
+flutter:
+  uses-material-design: true
