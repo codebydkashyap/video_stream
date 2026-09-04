@@ -16,22 +16,47 @@ class HostSessionScreen extends StatefulWidget {
   State<HostSessionScreen> createState() => _HostSessionScreenState();
 }
 
-class _HostSessionScreenState extends State<HostSessionScreen> {
+class _HostSessionScreenState extends State<HostSessionScreen>
+    with SingleTickerProviderStateMixin {
   bool _controlsVisible = true;
   bool _fullscreen = false;
+  late final AnimationController _fadeCtrl;
 
   @override
   void initState() {
     super.initState();
-    debugPrint('[HostSessionScreen] initState called.');
-    // Auto-hide controls after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _controlsVisible = false);
+    _fadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: 1.0,
+    );
+    _scheduleAutoHide();
+  }
+
+  void _scheduleAutoHide() {
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted && _controlsVisible) _hideControls();
     });
   }
 
-  void _toggleControls() =>
-      setState(() => _controlsVisible = !_controlsVisible);
+  void _hideControls() {
+    _fadeCtrl.reverse();
+    setState(() => _controlsVisible = false);
+  }
+
+  void _showControls() {
+    _fadeCtrl.forward();
+    setState(() => _controlsVisible = true);
+    _scheduleAutoHide();
+  }
+
+  void _toggleControls() {
+    if (_controlsVisible) {
+      _hideControls();
+    } else {
+      _showControls();
+    }
+  }
 
   void _toggleFullscreen() {
     setState(() => _fullscreen = !_fullscreen);
@@ -44,6 +69,7 @@ class _HostSessionScreenState extends State<HostSessionScreen> {
 
   @override
   void dispose() {
+    _fadeCtrl.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
@@ -55,61 +81,108 @@ class _HostSessionScreenState extends State<HostSessionScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GestureDetector(
-        onTap: _toggleControls,
-        child: Stack(
-          children: [
-            // ── Main View (Local Screen or Camera) ──
+      body: Stack(
+        children: [
+          // ── Main view ────────────────────────────────────────────────────
             Positioned.fill(
               child: host.isStreaming
-                  ? Container(
-                      color: AppTheme.accent.withValues(alpha: 0.05),
-                      child: RTCVideoView(
-                        host.localRenderer,
-                        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-                        mirror: host.isCameraSharing && !host.isScreenSharing,
-                      ),
+                  ? RTCVideoView(
+                      host.localRenderer,
+                      objectFit:
+                          RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                      mirror: host.isCameraSharing && !host.isScreenSharing,
                     )
-                  : const Center(child: CircularProgressIndicator()),
+                  : Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 80,
+                                height: 80,
+                                child: CircularProgressIndicator(
+                                  color: AppTheme.cyan.withOpacity(0.2),
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              SizedBox(
+                                width: 50,
+                                height: 50,
+                                child: CircularProgressIndicator(
+                                  color: AppTheme.cyan,
+                                  strokeWidth: 3,
+                                ),
+                              ),
+                              Icon(Icons.satellite_alt_rounded, color: AppTheme.cyan, size: 24),
+                            ],
+                          ),
+                          const SizedBox(height: 32),
+                          const Text(
+                            'STARTING STREAM...',
+                            style: TextStyle(
+                              color: AppTheme.cyan,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 3,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Initializing WebRTC connection',
+                            style: TextStyle(
+                              color: AppTheme.textMuted.withOpacity(0.6),
+                              fontSize: 11,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
             ),
 
-            // ── Remote Viewer (PiP) ──
+            // ── Touch layer for controls toggle ──────────────────────────────
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _toggleControls,
+                child: const SizedBox.expand(),
+              ),
+            ),
+
+            // ── Viewer PiP ───────────────────────────────────────────────────
             if (host.isStreaming && host.remoteRenderer.srcObject != null)
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 80,
-                right: 20,
-                child: _PiPView(
-                  renderer: host.remoteRenderer,
-                  label: 'VIEWER',
-                ),
+              _DraggablePiP(
+                renderer: host.remoteRenderer,
+                label: 'VIEWER',
+                initialOffset:
+                    Offset(MediaQuery.of(context).size.width - 168, 90),
               ),
 
-            // ── Host Self Camera (PiP - only when screen sharing) ──
-            if (host.isStreaming && host.isScreenSharing && host.isCameraSharing)
-              Positioned(
-                bottom: 140, // More space for bottom control bar
-                left: 20,    // Move to left side to avoid stacking if viewer was moved
-                child: _PiPView(
-                  renderer: host.cameraRenderer,
-                  label: 'SELF',
-                  mirror: true,
-                ),
+            // ── Self camera PiP (when screen sharing) ────────────────────────
+            if (host.isStreaming &&
+                host.isScreenSharing &&
+                host.isCameraSharing)
+              _DraggablePiP(
+                renderer: host.cameraRenderer,
+                label: 'YOU',
+                mirror: true,
+                initialOffset: const Offset(16, 90),
               ),
 
-            // ── Top controls bar ──
-            AnimatedOpacity(
-              opacity: _controlsVisible ? 1 : 0,
-              duration: const Duration(milliseconds: 300),
+            // ── Top bar ──────────────────────────────────────────────────────
+            FadeTransition(
+              opacity: _fadeCtrl,
               child: IgnorePointer(
                 ignoring: !_controlsVisible,
                 child: _buildTopBar(host),
               ),
             ),
 
-            // ── Bottom controls bar ──
-            AnimatedOpacity(
-              opacity: _controlsVisible ? 1 : 0,
-              duration: const Duration(milliseconds: 300),
+            // ── Bottom bar ───────────────────────────────────────────────────
+            FadeTransition(
+              opacity: _fadeCtrl,
               child: IgnorePointer(
                 ignoring: !_controlsVisible,
                 child: Align(
@@ -120,299 +193,262 @@ class _HostSessionScreenState extends State<HostSessionScreen> {
             ),
           ],
         ),
-      ),
     );
   }
+
+  // ── Top Bar ──────────────────────────────────────────────────────────────────
 
   Widget _buildTopBar(WebRTCHostService host) {
     final auth = context.watch<AuthService>();
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+          colors: [Color(0xCC000000), Colors.transparent],
         ),
       ),
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 16, 16, 32),
+      padding: EdgeInsets.fromLTRB(
+          16, MediaQuery.of(context).padding.top + 12, 16, 28),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Hosting Session',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16)),
-                  Text(
-                    '${host.viewerCount} Viewer(s) connected',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              if (host.isStreaming)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              // Back button
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppTheme.success.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.success.withValues(alpha: 0.4)),
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.15)),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                            color: AppTheme.success, shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 6),
-                      const Text('LIVE',
-                          style: TextStyle(
-                              color: AppTheme.success,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700)),
-                    ],
-                  ),
+                  child: const Icon(Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white, size: 16),
                 ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Live Session',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16)),
+                    Text(
+                      '${host.viewerCount} viewer${host.viewerCount == 1 ? '' : 's'} connected',
+                      style: const TextStyle(
+                          color: AppTheme.textMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              // LIVE badge
+              if (host.isStreaming) _LivePill(),
             ],
           ),
           const SizedBox(height: 12),
-          // ID and Pairing Code Info
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _InfoChip(
-                  label: 'ID',
-                  value: auth.deviceId ?? '---',
-                  icon: Icons.computer_rounded,
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: auth.deviceId ?? ''));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Device ID copied!')),
-                    );
-                  },
-                ),
-                if (auth.pairingCode != null) ...[
-                  const SizedBox(width: 8),
-                  _InfoChip(
-                    label: 'CODE',
-                    value: auth.pairingCode!,
-                    icon: Icons.key_rounded,
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: auth.pairingCode!));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Pairing Code copied!')),
-                      );
-                    },
-                  ),
-                ],
-              ],
-            ),
+          // Info chips
+          Row(
+            children: [
+              _InfoPill(
+                  icon: Icons.computer_rounded, label: auth.deviceId ?? '---'),
+              const SizedBox(width: 8),
+              if (auth.pairingCode != null)
+                _InfoPill(icon: Icons.key_rounded, label: auth.pairingCode!),
+            ],
           ),
         ],
       ),
     );
   }
 
+  // ── Bottom Bar ────────────────────────────────────────────────────────────────
+
   Widget _buildBottomBar(WebRTCHostService host, SignalingService signaling) {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
-          colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+          colors: [Color(0xEE000000), Colors.transparent],
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _ControlBtn(
-              icon: host.isMicActive ? Icons.mic_rounded : Icons.mic_off_rounded,
-              label: 'Mic',
-              color: host.isMicActive ? AppTheme.success : AppTheme.textMuted,
-              onTap: () => host.toggleMic(),
+      padding: const EdgeInsets.fromLTRB(20, 30, 20, 36),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _SessionBtn(
+            icon: host.isMicActive ? Icons.mic_rounded : Icons.mic_off_rounded,
+            label: 'Mic',
+            active: host.isMicActive,
+            activeColor: AppTheme.success,
+            onTap: () => host.toggleMic(),
+          ),
+          const SizedBox(width: 10),
+          _SessionBtn(
+            icon: host.isCameraSharing
+                ? Icons.videocam_rounded
+                : Icons.videocam_off_rounded,
+            label: 'Camera',
+            active: host.isCameraSharing,
+            activeColor: AppTheme.success,
+            onTap: () => host.toggleCamera(),
+          ),
+          const SizedBox(width: 10),
+          _SessionBtn(
+            icon: host.isScreenSharing
+                ? Icons.stop_screen_share_rounded
+                : Icons.screenshot_monitor_rounded,
+            label: host.isScreenSharing ? 'Stop' : 'Share',
+            active: host.isScreenSharing,
+            activeColor: AppTheme.cyan,
+            onTap: () async {
+              if (host.isScreenSharing) {
+                await host.stopScreenShare();
+              } else {
+                await host.startScreenShare(signaling);
+              }
+            },
+          ),
+          const SizedBox(width: 10),
+          _SessionBtn(
+            icon: _fullscreen
+                ? Icons.fullscreen_exit_rounded
+                : Icons.fullscreen_rounded,
+            label: _fullscreen ? 'Exit' : 'Full',
+            active: _fullscreen,
+            activeColor: AppTheme.electricBlue,
+            onTap: _toggleFullscreen,
+          ),
+          const SizedBox(width: 10),
+          // End call — prominent red
+          GestureDetector(
+            onTap: () async {
+              await host.stopHosting();
+              if (mounted) Navigator.pop(context);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppTheme.danger, Color(0xFFB91C1C)],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                      color: AppTheme.danger.withValues(alpha: 0.4),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4)),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.call_end_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 6),
+                  Text('End',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
             ),
-            const SizedBox(width: 12),
-            _ControlBtn(
-              icon: host.isCameraSharing ? Icons.videocam_rounded : Icons.videocam_off_rounded,
-              label: 'Cam',
-              color: host.isCameraSharing ? AppTheme.success : AppTheme.textMuted,
-              onTap: () => host.toggleCamera(),
-            ),
-            const SizedBox(width: 12),
-            _ControlBtn(
-              icon: host.isScreenSharing ? Icons.screen_share_rounded : Icons.stop_screen_share_rounded,
-              label: host.isScreenSharing ? 'Stop Screen' : 'Share Screen',
-              color: host.isScreenSharing ? AppTheme.accent : AppTheme.textMuted,
-              onTap: () async {
-                if (host.isScreenSharing) {
-                  await host.stopScreenShare();
-                } else {
-                  await host.startScreenShare(signaling);
-                }
-              },
-            ),
-            const SizedBox(width: 12),
-            _ControlBtn(
-              icon: _fullscreen
-                  ? Icons.fullscreen_exit_rounded
-                  : Icons.fullscreen_rounded,
-              label: _fullscreen ? 'Exit' : 'Full',
-              onTap: _toggleFullscreen,
-            ),
-            const SizedBox(width: 12),
-            _ControlBtn(
-              icon: Icons.close_rounded,
-              label: 'End',
-              color: AppTheme.danger,
-              onTap: () async {
-                await host.stopHosting();
-                if (mounted) Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ControlBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color? color;
-  final VoidCallback onTap;
+// ─── Live Pill ────────────────────────────────────────────────────────────────
 
-  const _ControlBtn({
-    required this.icon,
-    required this.label,
-    this.color,
-    required this.onTap,
-  });
-
+class _LivePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final c = color ?? Colors.white;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: c.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: c, size: 18),
-            const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                    color: c, fontSize: 13, fontWeight: FontWeight.w600)),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppTheme.danger.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+            color: AppTheme.danger.withValues(alpha: 0.45), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: AppTheme.danger,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                    color: AppTheme.danger.withValues(alpha: 0.8),
+                    blurRadius: 5)
+              ],
+            ),
+          ),
+          const SizedBox(width: 5),
+          const Text('LIVE',
+              style: TextStyle(
+                  color: AppTheme.danger,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1)),
+        ],
       ),
     );
   }
 }
 
-class _PiPView extends StatelessWidget {
-  final RTCVideoRenderer renderer;
-  final String label;
-  final bool mirror;
+// ─── Info Pill ────────────────────────────────────────────────────────────────
 
-  const _PiPView({
-    required this.renderer,
-    required this.label,
-    this.mirror = false,
-  });
+class _InfoPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _InfoPill({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        if (renderer.srcObject != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => FullScreenVideoView(
-                renderer: renderer,
-                label: label,
-                mirror: mirror,
-              ),
-            ),
-          );
-        }
+        Clipboard.setData(ClipboardData(text: label));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Copied!'),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 1)),
+        );
       },
       child: Container(
-        width: 140,
-        height: 100,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: Colors.black12,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black54, blurRadius: 10, offset: const Offset(0, 4)),
-          ],
-          border: Border.all(color: Colors.white24, width: 1.5),
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            RTCVideoView(
-              renderer,
-              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-              mirror: mirror,
-            ),
-            if (renderer.srcObject == null)
-              Container(
-                color: Colors.black,
-                child: const Center(
-                  child: Icon(Icons.videocam_off_rounded,
-                      color: Colors.white24, size: 24),
-                ),
-              ),
-            Positioned(
-              bottom: 4,
-              left: 4,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  label.toUpperCase(),
-                  style: const TextStyle(
+            Icon(icon, color: AppTheme.cyan, size: 12),
+            const SizedBox(width: 5),
+            Text(label,
+                style: const TextStyle(
                     color: Colors.white70,
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 4,
-              right: 4,
-              child: const Icon(Icons.fullscreen_rounded, color: Colors.white38, size: 16),
-            ),
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5)),
+            const SizedBox(width: 5),
+            const Icon(Icons.copy_rounded, color: Colors.white24, size: 10),
           ],
         ),
       ),
@@ -420,55 +456,170 @@ class _PiPView extends StatelessWidget {
   }
 }
 
-class _InfoChip extends StatelessWidget {
-  final String label;
-  final String value;
+// ─── Session Button ───────────────────────────────────────────────────────────
+
+class _SessionBtn extends StatelessWidget {
   final IconData icon;
+  final String label;
+  final bool active;
+  final Color activeColor;
   final VoidCallback onTap;
 
-  const _InfoChip({
-    required this.label,
-    required this.value,
+  const _SessionBtn({
     required this.icon,
+    required this.label,
+    required this.active,
+    required this.activeColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    final c = active ? activeColor : Colors.white38;
+    return Tooltip(
+      message: label,
+      child: GestureDetector(
+        onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white10),
+          color: c.withValues(alpha: active ? 0.18 : 0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: c.withValues(alpha: 0.3)),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                      color: c.withValues(alpha: 0.25),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3))
+                ]
+              : [],
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: AppTheme.accent, size: 14),
-            const SizedBox(width: 6),
-            Text(
-              '$label: ',
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(Icons.copy_rounded, color: Colors.white24, size: 10),
+            Icon(icon, color: c, size: 20),
+            const SizedBox(height: 4),
+            Text(label,
+                style: TextStyle(
+                    color: c, fontSize: 10, fontWeight: FontWeight.w600)),
           ],
+        ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Draggable PiP View ───────────────────────────────────────────────────────
+
+class _DraggablePiP extends StatefulWidget {
+  final RTCVideoRenderer renderer;
+  final String label;
+  final bool mirror;
+  final Offset initialOffset;
+
+  const _DraggablePiP({
+    required this.renderer,
+    required this.label,
+    this.mirror = false,
+    required this.initialOffset,
+  });
+
+  @override
+  State<_DraggablePiP> createState() => _DraggablePiPState();
+}
+
+class _DraggablePiPState extends State<_DraggablePiP> {
+  late Offset _pos;
+
+  @override
+  void initState() {
+    super.initState();
+    _pos = widget.initialOffset;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: _pos.dx,
+      top: _pos.dy,
+      child: GestureDetector(
+        onPanUpdate: (d) => setState(() => _pos += d.delta),
+        onTap: () {
+          if (widget.renderer.srcObject != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => FullScreenVideoView(
+                  renderer: widget.renderer,
+                  label: widget.label,
+                  mirror: widget.mirror,
+                ),
+              ),
+            );
+          }
+        },
+        child: Container(
+          width: 148,
+          height: 106,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: 0.18), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6)),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              RTCVideoView(
+                widget.renderer,
+                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                mirror: widget.mirror,
+              ),
+              if (widget.renderer.srcObject == null)
+                const Center(
+                    child: Icon(Icons.videocam_off_rounded,
+                        color: Colors.white24, size: 26)),
+
+              // Label badge
+              Positioned(
+                bottom: 6,
+                left: 6,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    widget.label,
+                    style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8),
+                  ),
+                ),
+              ),
+
+              // Drag handle
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Icon(Icons.open_with_rounded,
+                    color: Colors.white.withValues(alpha: 0.4), size: 14),
+              ),
+            ],
+          ),
         ),
       ),
     );

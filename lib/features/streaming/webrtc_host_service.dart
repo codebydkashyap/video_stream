@@ -27,6 +27,8 @@ class WebRTCHostService extends ChangeNotifier {
   bool _remoteDescriptionSet = false;
   final List<RTCIceCandidate> _remoteIceQueue = [];
 
+  bool _autoPausedCameraForScreenShare = false;
+
   // Track senders for dynamic replacement/removal
   final Map<String, RTCRtpSender> _senders = {};
 
@@ -36,7 +38,11 @@ class WebRTCHostService extends ChangeNotifier {
   bool get isStreaming => _state == HostStreamState.streaming;
   bool get isScreenSharing =>
       _screenStream != null && _screenStream!.getVideoTracks().isNotEmpty;
-  bool get isCameraSharing => _cameraStream != null;
+  bool get isCameraSharing {
+    if (_cameraStream == null) return false;
+    final videoTracks = _cameraStream!.getVideoTracks();
+    return videoTracks.isNotEmpty && videoTracks.first.enabled;
+  }
   bool get isMicActive {
     return _cameraStream?.getAudioTracks().any((t) => t.enabled) ?? false;
   }
@@ -69,7 +75,8 @@ class WebRTCHostService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[WebRTCHost] Start meeting error: $e');
-      _setState(HostStreamState.error);
+      _setState(HostStreamState.idle);
+      rethrow;
     }
   }
 
@@ -86,6 +93,11 @@ class WebRTCHostService extends ChangeNotifier {
         notifyListeners();
       }
 
+      if (isCameraSharing) {
+        _autoPausedCameraForScreenShare = true;
+        await toggleCamera();
+      }
+
       if (_pc != null) {
         await _updateTracks();
       }
@@ -93,8 +105,9 @@ class WebRTCHostService extends ChangeNotifier {
       debugPrint('[WebRTCHost] Screen share error: $e');
       if (_state == HostStreamState.idle ||
           _state == HostStreamState.starting) {
-        _setState(HostStreamState.error);
+        _setState(HostStreamState.idle);
       }
+      rethrow;
     }
   }
 
@@ -491,6 +504,13 @@ class WebRTCHostService extends ChangeNotifier {
       debugPrint('[WebRTCHost] Screen stream disposal error (non-fatal): $e');
     }
     _screenStream = null;
+
+    if (_autoPausedCameraForScreenShare) {
+      _autoPausedCameraForScreenShare = false;
+      if (!isCameraSharing) {
+        await toggleCamera();
+      }
+    }
 
     // Stop Android foreground service ONLY if camera is also not active
     if (!isCameraSharing) {

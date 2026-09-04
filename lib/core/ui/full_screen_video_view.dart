@@ -28,7 +28,7 @@ class FullScreenVideoView extends StatelessWidget {
               mirror: mirror,
             ),
           ),
-          
+
           // Header with label and close button
           Positioned(
             top: 0,
@@ -51,16 +51,17 @@ class FullScreenVideoView extends StatelessWidget {
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppTheme.accent.withOpacity(0.2),
+                      color: AppTheme.cyan.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.accent.withOpacity(0.4)),
+                      border: Border.all(color: AppTheme.cyan.withOpacity(0.4)),
                     ),
                     child: Text(
                       label.toUpperCase(),
                       style: const TextStyle(
-                        color: AppTheme.accent,
+                        color: AppTheme.cyan,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1,
@@ -68,9 +69,13 @@ class FullScreenVideoView extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
-                    onPressed: () => Navigator.pop(context),
+                  Tooltip(
+                    message: 'Close Fullscreen',
+                    child: IconButton(
+                      icon: const Icon(Icons.close_rounded,
+                          color: Colors.white, size: 28),
+                      onPressed: () => Navigator.pop(context),
+                    ),
                   ),
                 ],
               ),
@@ -83,11 +88,32 @@ class FullScreenVideoView extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.videocam_off_rounded, color: Colors.white24, size: 64),
-                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceGlass.withOpacity(0.5),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppTheme.cyan.withOpacity(0.2)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.cyan.withOpacity(0.1),
+                          blurRadius: 30,
+                          spreadRadius: 5,
+                        ),
+                      ],
+                    ),
+                    child: Icon(Icons.videocam_off_rounded,
+                        color: AppTheme.cyan.withOpacity(0.8), size: 48),
+                  ),
+                  const SizedBox(height: 24),
                   Text(
-                    'No Video Stream Available',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 16),
+                    'NO VIDEO FEED',
+                    style: TextStyle(
+                      color: AppTheme.textMuted.withOpacity(0.8),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 3,
+                    ),
                   ),
                 ],
               ),

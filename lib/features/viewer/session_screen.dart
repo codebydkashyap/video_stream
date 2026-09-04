@@ -17,7 +17,8 @@ class SessionScreen extends StatefulWidget {
 class _SessionScreenState extends State<SessionScreen> {
   bool _controlsVisible = true;
   bool _fullscreen = false;
-  RTCVideoViewObjectFit _objectFit = RTCVideoViewObjectFit.RTCVideoViewObjectFitContain;
+  RTCVideoViewObjectFit _objectFit =
+      RTCVideoViewObjectFit.RTCVideoViewObjectFitContain;
 
   @override
   void initState() {
@@ -44,15 +45,17 @@ class _SessionScreenState extends State<SessionScreen> {
 
   void _toggleFit() {
     setState(() {
-      _objectFit = _objectFit == RTCVideoViewObjectFit.RTCVideoViewObjectFitContain
-          ? RTCVideoViewObjectFit.RTCVideoViewObjectFitCover
-          : RTCVideoViewObjectFit.RTCVideoViewObjectFitContain;
+      _objectFit =
+          _objectFit == RTCVideoViewObjectFit.RTCVideoViewObjectFitContain
+              ? RTCVideoViewObjectFit.RTCVideoViewObjectFitCover
+              : RTCVideoViewObjectFit.RTCVideoViewObjectFitContain;
     });
-    
+
     // Show a brief snackbar/hint about the change
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Video Fit: ${_objectFit == RTCVideoViewObjectFit.RTCVideoViewObjectFitContain ? "Contain" : "Cover"}'),
+        content: Text(
+            'Video Fit: ${_objectFit == RTCVideoViewObjectFit.RTCVideoViewObjectFitContain ? "Contain" : "Cover"}'),
         duration: const Duration(seconds: 1),
         behavior: SnackBarBehavior.floating,
         width: 200,
@@ -107,7 +110,7 @@ class _SessionScreenState extends State<SessionScreen> {
             // ── Viewer Local Camera (PiP 2) ──
             Positioned(
               bottom: 140, // More space for the bottom control bar
-              left: 20,    // Move to left side to avoid stacking with host camera
+              left: 20, // Move to left side to avoid stacking with host camera
               child: _PiPView(
                 renderer: viewer.localRenderer,
                 label: 'SELF',
@@ -157,13 +160,13 @@ class _SessionScreenState extends State<SessionScreen> {
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Go back', style: TextStyle(color: AppTheme.accent)),
+              child: Text('Go back', style: TextStyle(color: AppTheme.cyan)),
             ),
           ],
         ),
       );
     }
-    
+
     if (state == ViewerStreamState.disconnected) {
       return Center(
         child: Column(
@@ -185,32 +188,60 @@ class _SessionScreenState extends State<SessionScreen> {
       );
     }
 
-    if (state == ViewerStreamState.idle) {
-      return const Center(
-        child: Text('Initializing session…', style: TextStyle(color: Colors.white38)),
+    if (state == ViewerStreamState.idle || state == ViewerStreamState.connecting) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: CircularProgressIndicator(
+                    color: AppTheme.cyan.withValues(alpha: 0.2),
+                    strokeWidth: 2,
+                  ),
+                ),
+                SizedBox(
+                  width: 50,
+                  height: 50,
+                  child: CircularProgressIndicator(
+                    color: AppTheme.cyan,
+                    strokeWidth: 3,
+                  ),
+                ),
+                Icon(Icons.desktop_windows_rounded, color: AppTheme.cyan, size: 24),
+              ],
+            ),
+            const SizedBox(height: 32),
+            Text(
+              state == ViewerStreamState.connecting
+                  ? 'CONNECTING TO HOST...'
+                  : 'INITIALIZING SESSION...',
+              style: TextStyle(
+                color: AppTheme.cyan,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Secure WebRTC Connection',
+              style: TextStyle(
+                color: AppTheme.textMuted.withValues(alpha: 0.6),
+                fontSize: 11,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
       );
     }
-
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: CircularProgressIndicator(
-                color: AppTheme.accent, strokeWidth: 2.5),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            state == ViewerStreamState.connecting
-                ? 'Connecting to host…'
-                : 'Waiting for stream…',
-            style: const TextStyle(color: Colors.white54, fontSize: 14),
-          ),
-        ],
-      ),
-    );
+    
+    return const SizedBox();
   }
 
   Widget _buildTopBar(WebRTCViewerService viewer) {
@@ -222,7 +253,8 @@ class _SessionScreenState extends State<SessionScreen> {
           colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
         ),
       ),
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 16, 16, 32),
+      padding: EdgeInsets.fromLTRB(
+          16, MediaQuery.of(context).padding.top + 16, 16, 32),
       child: Row(
         children: [
           IconButton(
@@ -256,7 +288,8 @@ class _SessionScreenState extends State<SessionScreen> {
               decoration: BoxDecoration(
                 color: AppTheme.success.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppTheme.success.withValues(alpha: 0.4)),
+                border:
+                    Border.all(color: AppTheme.success.withValues(alpha: 0.4)),
               ),
               child: Row(
                 children: [
@@ -296,23 +329,30 @@ class _SessionScreenState extends State<SessionScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _ControlBtn(
-              icon: viewer.isMicActive ? Icons.mic_rounded : Icons.mic_off_rounded,
+              icon: viewer.isMicActive
+                  ? Icons.mic_rounded
+                  : Icons.mic_off_rounded,
               label: 'Mic',
               color: viewer.isMicActive ? AppTheme.success : AppTheme.textMuted,
               onTap: () => viewer.toggleMic(),
             ),
             const SizedBox(width: 12),
             _ControlBtn(
-              icon: viewer.isCamActive ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+              icon: viewer.isCamActive
+                  ? Icons.videocam_rounded
+                  : Icons.videocam_off_rounded,
               label: 'Cam',
               color: viewer.isCamActive ? AppTheme.success : AppTheme.textMuted,
               onTap: () => viewer.toggleCamera(),
             ),
             const SizedBox(width: 12),
             _ControlBtn(
-              icon: viewer.isScreenSharing ? Icons.screen_share_rounded : Icons.stop_screen_share_rounded,
+              icon: viewer.isScreenSharing
+                  ? Icons.screen_share_rounded
+                  : Icons.stop_screen_share_rounded,
               label: viewer.isScreenSharing ? 'Stop Screen' : 'Share Screen',
-              color: viewer.isScreenSharing ? AppTheme.accent : AppTheme.textMuted,
+              color:
+                  viewer.isScreenSharing ? AppTheme.cyan : AppTheme.textMuted,
               onTap: () async {
                 if (viewer.isScreenSharing) {
                   await viewer.stopScreenShare();
@@ -325,7 +365,10 @@ class _SessionScreenState extends State<SessionScreen> {
             _ControlBtn(
               icon: Icons.screen_rotation_outlined,
               label: 'Fit',
-              color: _objectFit == RTCVideoViewObjectFit.RTCVideoViewObjectFitCover ? AppTheme.accent : null,
+              color:
+                  _objectFit == RTCVideoViewObjectFit.RTCVideoViewObjectFitCover
+                      ? AppTheme.cyan
+                      : null,
               onTap: _toggleFit,
             ),
             const SizedBox(width: 12),
@@ -369,23 +412,26 @@ class _ControlBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = color ?? Colors.white;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: c.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: c, size: 18),
-            const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                    color: c, fontSize: 13, fontWeight: FontWeight.w600)),
-          ],
+    return Tooltip(
+      message: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: c.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: c.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: c, size: 18),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: TextStyle(
+                      color: c, fontSize: 13, fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
       ),
     );
@@ -428,7 +474,9 @@ class _PiPView extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-                color: Colors.black54, blurRadius: 10, offset: const Offset(0, 4)),
+                color: Colors.black54,
+                blurRadius: 10,
+                offset: const Offset(0, 4)),
           ],
           border: Border.all(color: Colors.white24, width: 1.5),
         ),
@@ -472,7 +520,8 @@ class _PiPView extends StatelessWidget {
             Positioned(
               top: 4,
               right: 4,
-              child: Icon(Icons.fullscreen_rounded, color: Colors.white38, size: 16),
+              child: Icon(Icons.fullscreen_rounded,
+                  color: Colors.white38, size: 16),
             ),
           ],
         ),
@@ -480,4 +529,3 @@ class _PiPView extends StatelessWidget {
     );
   }
 }
-

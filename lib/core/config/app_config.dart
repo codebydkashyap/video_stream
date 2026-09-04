@@ -22,6 +22,17 @@ class AppConfig {
   // ─────────────────────────────────────────────────────────────────────────
   static const String _defaultSignalingUrl = 'wss://signaling.onrender.com/';
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // The publicly hosted web app URL — used to build invite/join links.
+  // Format: https://<host>/join?device=<id>&code=<pairingCode>
+  // ─────────────────────────────────────────────────────────────────────────
+  static const String appBaseUrl = 'https://remote-desktop-s6mc.vercel.app';
+
+  /// Builds a shareable join link for a given [deviceId] and [pairingCode].
+  static String buildJoinLink(String deviceId, String pairingCode) {
+    return '$appBaseUrl/#/join?device=$deviceId&code=$pairingCode';
+  }
+
   String get signalingUrl {
     final saved = _prefs.getString('signaling_url');
     final url = (saved != null && saved.isNotEmpty) ? saved : _defaultSignalingUrl;
