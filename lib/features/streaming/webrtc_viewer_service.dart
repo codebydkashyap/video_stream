@@ -12,10 +12,14 @@ class WebRTCViewerService extends ChangeNotifier {
   RTCPeerConnection? _pc;
   SignalingService? _signalingService;
   String? _hostDeviceId;
-  
+
+  // Remote streams received FROM the host
   MediaStream? _screenStream;
   MediaStream? _cameraStream;
-  MediaStream? _localStream;
+
+  // Local streams sent TO the host
+  MediaStream? _localStream; // camera + mic
+  MediaStream? _localScreenStream; // viewer's own screen share (outgoing)
 
   final RTCVideoRenderer screenRenderer = RTCVideoRenderer();
   final RTCVideoRenderer cameraRenderer = RTCVideoRenderer();
@@ -33,9 +37,14 @@ class WebRTCViewerService extends ChangeNotifier {
   bool get isWatching => _state == ViewerStreamState.watching;
   MediaStream? get screenStream => _screenStream;
   MediaStream? get cameraStream => _cameraStream;
-  bool get isMicActive => _localStream?.getAudioTracks().any((t) => t.enabled) ?? false;
-  bool get isCamActive => _localStream?.getVideoTracks().any((t) => t.enabled) ?? false;
-  bool get isScreenSharing => _screenStream != null && _screenStream!.getVideoTracks().isNotEmpty;
+  bool get isMicActive =>
+      _localStream?.getAudioTracks().any((t) => t.enabled) ?? false;
+  bool get isCamActive =>
+      _localStream?.getVideoTracks().any((t) => t.enabled) ?? false;
+  // isScreenSharing refers to the VIEWER'S OWN outgoing screen share, not the host's remote feed
+  bool get isScreenSharing =>
+      _localScreenStream != null &&
+      _localScreenStream!.getVideoTracks().isNotEmpty;
 
   Future<void> initialize() async {
     await screenRenderer.initialize();
@@ -82,10 +91,11 @@ class WebRTCViewerService extends ChangeNotifier {
       // If STUN-only negotiation fails, we automatically retry with TURN relay.
       _pc!.onIceConnectionState = (RTCIceConnectionState state) async {
         debugPrint('[WebRTCViewer] ICE connection state changed: $state');
-        
-        if (state == RTCIceConnectionState.RTCIceConnectionStateConnected || 
+
+        if (state == RTCIceConnectionState.RTCIceConnectionStateConnected ||
             state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
-          debugPrint('[WebRTCViewer] WebRTC connection established! Media should start flowing.');
+          debugPrint(
+              '[WebRTCViewer] WebRTC connection established! Media should start flowing.');
         }
 
         if (state == RTCIceConnectionState.RTCIceConnectionStateFailed &&
@@ -110,19 +120,22 @@ class WebRTCViewerService extends ChangeNotifier {
             shareCamera: shareCamera,
             useTurn: true,
           );
-        } else if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected || 
-                   state == RTCIceConnectionState.RTCIceConnectionStateClosed) {
+        } else if (state ==
+                RTCIceConnectionState.RTCIceConnectionStateDisconnected ||
+            state == RTCIceConnectionState.RTCIceConnectionStateClosed) {
           debugPrint('[WebRTCViewer] Peer connection lost. Cleaning up...');
           await disconnect();
         }
       };
 
       _pc!.onRemoveTrack = (stream, track) {
-        debugPrint('[WebRTCViewer] onRemoveTrack: ${track.kind} id: ${track.id}');
+        debugPrint(
+            '[WebRTCViewer] onRemoveTrack: ${track.kind} id: ${track.id}');
         _clearRendererForTrack(track);
       };
 
-      signalingService.sendConnect(hostDeviceId, pairingCode, authToken, viewerDeviceId);
+      signalingService.sendConnect(
+          hostDeviceId, pairingCode, authToken, viewerDeviceId);
     } catch (e) {
       debugPrint('[WebRTCViewer] Connection failed: $e');
       _setState(ViewerStreamState.error);
@@ -132,9 +145,10 @@ class WebRTCViewerService extends ChangeNotifier {
   void _setupSignaling(SignalingService signalingService, String hostDeviceId) {
     signalingService.on('offer', (msg) async {
       final sdp = msg['payload'] as String;
-      debugPrint('[WebRTCViewer] RECEIVED OFFER from host. Setting remote description...');
+      debugPrint(
+          '[WebRTCViewer] RECEIVED OFFER from host. Setting remote description...');
       await _pc!.setRemoteDescription(RTCSessionDescription(sdp, 'offer'));
-      
+
       bool isFirstOffer = !_remoteDescriptionSet;
       _remoteDescriptionSet = true;
       for (var cand in _remoteIceQueue) {
@@ -151,7 +165,8 @@ class WebRTCViewerService extends ChangeNotifier {
       // This bypasses the Unified Plan limitation where answers cannot attach
       // tracks properly if the Host's initial m-line transceivers misalign.
       if (isFirstOffer && _senders.isNotEmpty) {
-        debugPrint('[WebRTCViewer] Forcing explicit offer to synchronize local tracks.');
+        debugPrint(
+            '[WebRTCViewer] Forcing explicit offer to synchronize local tracks.');
         try {
           final offer = await _pc!.createOffer({});
           await _pc!.setLocalDescription(offer);
@@ -182,7 +197,7 @@ class WebRTCViewerService extends ChangeNotifier {
       final sdp = msg['payload'] as String;
       debugPrint('[WebRTCViewer] RECEIVED renegotiation ANSWER from host.');
       await _pc!.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
-      
+
       _remoteDescriptionSet = true;
       for (var cand in _remoteIceQueue) {
         await _pc!.addCandidate(cand);
@@ -197,8 +212,9 @@ class WebRTCViewerService extends ChangeNotifier {
   }
 
   void _handleTrack(RTCTrackEvent event) async {
-    debugPrint('[WebRTCViewer] onTrack: ${event.track.kind} streams: ${event.streams.length} trackId: ${event.track.id} enabled: ${event.track.enabled} muted: ${event.track.muted}');
-    
+    debugPrint(
+        '[WebRTCViewer] onTrack: ${event.track.kind} streams: ${event.streams.length} trackId: ${event.track.id} enabled: ${event.track.enabled} muted: ${event.track.muted}');
+
     // Listen for track ending to clear renderer
     event.track.onEnded = () {
       debugPrint('[WebRTCViewer] Track ended naturally: ${event.track.id}');
@@ -214,7 +230,8 @@ class WebRTCViewerService extends ChangeNotifier {
     if (event.streams.isNotEmpty) {
       stream = event.streams.first;
     } else {
-      debugPrint('[WebRTCViewer] Unified Plan fallback: creating local stream for track ${event.track.id}');
+      debugPrint(
+          '[WebRTCViewer] Unified Plan fallback: creating local stream for track ${event.track.id}');
       _screenStream ??= await createLocalMediaStream('remote_screen_fallback');
       _screenStream!.addTrack(event.track);
       stream = _screenStream!;
@@ -222,48 +239,58 @@ class WebRTCViewerService extends ChangeNotifier {
 
     if (event.track.kind == 'video') {
       // Logic: If we don't have a screen stream yet, or this track belongs to the main stream
-      bool isExistingScreenTrack = _screenStream != null && 
+      bool isExistingScreenTrack = _screenStream != null &&
           _screenStream!.getVideoTracks().any((t) => t.id == event.track.id);
 
       if (_screenStream == null || isExistingScreenTrack) {
-        debugPrint('[WebRTCViewer] Attaching track ${event.track.id} to SCREEN renderer.');
+        debugPrint(
+            '[WebRTCViewer] Attaching track ${event.track.id} to SCREEN renderer.');
         _screenStream = stream;
         // Fix: Force renderer update by clearing srcObject first
         screenRenderer.srcObject = null;
         screenRenderer.srcObject = _screenStream;
       } else {
-        debugPrint('[WebRTCViewer] Attaching track ${event.track.id} to CAMERA renderer.');
+        debugPrint(
+            '[WebRTCViewer] Attaching track ${event.track.id} to CAMERA renderer.');
         _cameraStream = stream;
         cameraRenderer.srcObject = null;
         cameraRenderer.srcObject = _cameraStream;
       }
     }
-    
+
     event.track.enabled = true;
     _setState(ViewerStreamState.watching);
   }
 
   void _clearRendererForTrack(MediaStreamTrack track) {
     if (track.kind != 'video') return;
-    
+
     // Check if this track is currently what's in our screen or camera stream
-    if (_screenStream != null && _screenStream!.getVideoTracks().any((t) => t.id == track.id)) {
-      debugPrint('[WebRTCViewer] Clearing SCREEN renderer because track ended.');
+    if (_screenStream != null &&
+        _screenStream!.getVideoTracks().any((t) => t.id == track.id)) {
+      debugPrint(
+          '[WebRTCViewer] Clearing SCREEN renderer because track ended.');
       screenRenderer.srcObject = null;
       _screenStream = null;
-    } else if (_cameraStream != null && _cameraStream!.getVideoTracks().any((t) => t.id == track.id)) {
-      debugPrint('[WebRTCViewer] Clearing CAMERA renderer because track ended.');
+    } else if (_cameraStream != null &&
+        _cameraStream!.getVideoTracks().any((t) => t.id == track.id)) {
+      debugPrint(
+          '[WebRTCViewer] Clearing CAMERA renderer because track ended.');
       cameraRenderer.srcObject = null;
       _cameraStream = null;
     }
     notifyListeners();
   }
 
-
   Future<void> startScreenShare() async {
     try {
-      _screenStream = await _webrtcRepo.getScreenStream();
-      localRenderer.srcObject = _screenStream;
+      // Use a SEPARATE field for the viewer's own outgoing screen share.
+      // _screenStream is reserved for the INCOMING host video.
+      _localScreenStream = await _webrtcRepo.getScreenStream();
+      // Show the local screen share in the local renderer only when camera is off
+      if (!isCamActive) {
+        localRenderer.srcObject = _localScreenStream;
+      }
       await _updateTracks();
       notifyListeners();
     } catch (e) {
@@ -272,10 +299,10 @@ class WebRTCViewerService extends ChangeNotifier {
   }
 
   Future<void> stopScreenShare() async {
-    if (_screenStream == null) return;
+    if (_localScreenStream == null) return;
 
     if (_pc != null) {
-      final trackIds = _screenStream!.getTracks().map((t) => t.id).toSet();
+      final trackIds = _localScreenStream!.getTracks().map((t) => t.id).toSet();
       final sendersToRemove = <String>[];
       for (var entry in _senders.entries) {
         if (trackIds.contains(entry.key)) {
@@ -290,12 +317,13 @@ class WebRTCViewerService extends ChangeNotifier {
       }
     }
 
-    if (localRenderer.srcObject == _screenStream) {
+    // Restore localRenderer to the camera stream (if active)
+    if (localRenderer.srcObject == _localScreenStream) {
       localRenderer.srcObject = _localStream;
     }
 
-    await _screenStream!.dispose();
-    _screenStream = null;
+    await _localScreenStream!.dispose();
+    _localScreenStream = null;
     await _webrtcRepo.stopForegroundService();
 
     await _updateTracks();
@@ -306,25 +334,34 @@ class WebRTCViewerService extends ChangeNotifier {
     try {
       if (_localStream == null) {
         _localStream = await _webrtcRepo.getUserMedia(audio: true, video: true);
+        // Prefer showing the camera in localRenderer; fall back to screen share if no camera
         localRenderer.srcObject = _localStream;
       } else {
         final videoTracks = _localStream!.getVideoTracks();
         if (videoTracks.isNotEmpty) {
           videoTracks.first.enabled = !videoTracks.first.enabled;
+          // If we just turned off the camera, switch localRenderer to screen share (if active)
+          if (!videoTracks.first.enabled && _localScreenStream != null) {
+            localRenderer.srcObject = _localScreenStream;
+          } else if (videoTracks.first.enabled) {
+            // Camera turned on: always show camera in local renderer
+            localRenderer.srcObject = _localStream;
+          }
         } else {
           // Add video to existing stream
-          final camStream = await _webrtcRepo.getUserMedia(audio: false, video: true);
+          final camStream =
+              await _webrtcRepo.getUserMedia(audio: false, video: true);
           _localStream!.addTrack(camStream.getVideoTracks().first);
           localRenderer.srcObject = _localStream;
         }
       }
       await _updateTracks();
-      
+
       // If everything stopped, stop the foreground service
       if (!isCamActive && !isMicActive && !isScreenSharing) {
         await _webrtcRepo.stopForegroundService();
       }
-      
+
       notifyListeners();
     } catch (e) {
       debugPrint('[WebRTCViewer] Toggle camera error: $e');
@@ -334,14 +371,16 @@ class WebRTCViewerService extends ChangeNotifier {
   Future<void> toggleMic() async {
     try {
       if (_localStream == null) {
-        _localStream = await _webrtcRepo.getUserMedia(audio: true, video: false);
+        _localStream =
+            await _webrtcRepo.getUserMedia(audio: true, video: false);
         localRenderer.srcObject = _localStream;
       } else {
         final audioTracks = _localStream!.getAudioTracks();
         if (audioTracks.isNotEmpty) {
           audioTracks.first.enabled = !audioTracks.first.enabled;
         } else {
-          final micStream = await _webrtcRepo.getUserMedia(audio: true, video: false);
+          final micStream =
+              await _webrtcRepo.getUserMedia(audio: true, video: false);
           _localStream!.addTrack(micStream.getAudioTracks().first);
         }
       }
@@ -361,13 +400,16 @@ class WebRTCViewerService extends ChangeNotifier {
   Future<void> _updateTracks() async {
     if (_pc == null) return;
 
-    final streams = [_screenStream, _cameraStream, _localStream].whereType<MediaStream>();
+    // Only include LOCAL/OUTGOING streams.
+    // _screenStream and _cameraStream are REMOTE incoming feeds from the host — never send those back.
+    final streams = [_localScreenStream, _localStream].whereType<MediaStream>();
     bool addedNewTrack = false;
 
     for (var stream in streams) {
       for (var track in stream.getTracks()) {
         if (!_senders.containsKey(track.id!)) {
-          debugPrint('[WebRTCViewer] Adding local track to PC: ${track.kind} id: ${track.id}');
+          debugPrint(
+              '[WebRTCViewer] Adding local track to PC: ${track.kind} id: ${track.id}');
           final sender = await _pc!.addTrack(track, stream);
           _senders[track.id!] = sender;
           addedNewTrack = true;
@@ -376,12 +418,14 @@ class WebRTCViewerService extends ChangeNotifier {
     }
 
     bool hasChanges = addedNewTrack;
-    
+
     // Check if we have senders for tracks that are no longer in our local streams
     // (This handles the 'removed' case)
-    final allActiveTrackIds = streams.expand((s) => s.getTracks()).map((t) => t.id).toSet();
-    final sendersToRemove = _senders.keys.where((id) => !allActiveTrackIds.contains(id)).toList();
-    
+    final allActiveTrackIds =
+        streams.expand((s) => s.getTracks()).map((t) => t.id).toSet();
+    final sendersToRemove =
+        _senders.keys.where((id) => !allActiveTrackIds.contains(id)).toList();
+
     if (sendersToRemove.isNotEmpty) {
       for (var id in sendersToRemove) {
         try {
@@ -393,8 +437,12 @@ class WebRTCViewerService extends ChangeNotifier {
     }
 
     // Only renegotiate if we actually changed something AND the connection is fully established
-    if (hasChanges && _hostDeviceId != null && _signalingService != null && _remoteDescriptionSet) {
-      debugPrint('[WebRTCViewer] Triggering renegotiation offer from viewer...');
+    if (hasChanges &&
+        _hostDeviceId != null &&
+        _signalingService != null &&
+        _remoteDescriptionSet) {
+      debugPrint(
+          '[WebRTCViewer] Triggering renegotiation offer from viewer...');
       try {
         final offer = await _pc!.createOffer({});
         await _pc!.setLocalDescription(offer);
@@ -408,23 +456,25 @@ class WebRTCViewerService extends ChangeNotifier {
 
   Future<void> disconnect() async {
     _setState(ViewerStreamState.disconnected);
-    
+
     // Clear renderers first to stop native processing
     screenRenderer.srcObject = null;
     cameraRenderer.srcObject = null;
     localRenderer.srcObject = null;
-    
+
     await _screenStream?.dispose();
     await _cameraStream?.dispose();
     await _localStream?.dispose();
+    await _localScreenStream?.dispose();
     await _pc?.close();
-    
+
     await _webrtcRepo.stopForegroundService();
-    
+
     _pc = null;
     _screenStream = null;
     _cameraStream = null;
     _localStream = null;
+    _localScreenStream = null;
     _senders.clear();
     _hostDeviceId = null;
   }
@@ -441,13 +491,14 @@ class WebRTCViewerService extends ChangeNotifier {
     screenRenderer.srcObject = null;
     cameraRenderer.srcObject = null;
     localRenderer.srcObject = null;
-    
+
     // Attempt cleanup (can't await in dispose)
     _screenStream?.dispose();
     _cameraStream?.dispose();
     _localStream?.dispose();
+    _localScreenStream?.dispose();
     _pc?.close();
-    
+
     screenRenderer.dispose();
     cameraRenderer.dispose();
     localRenderer.dispose();
